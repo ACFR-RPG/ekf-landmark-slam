@@ -37,7 +37,8 @@ The core package. It implements the full EKF SLAM pipeline — reading sensor da
 | Script | Description |
 |--------|-------------|
 | `ekf_pipeline_node.py` | ROS 2 node entry point. Creates an `EkfPipelineNode` that instantiates `Pipeline` with an `ExtendedKalmanFilter`. |
-| `odom_to_control_republisher.py` | Simulation helper. Republishes the twist component of `/odom` as a `Twist` control message consumed by the EKF pipeline. |
+| `odom_to_control_republisher.py` | Simulation helper. Republishes the twist component of `/odom` as a `Twist` control message consumed by the EKF pipeline. Publishes at the Gazebo odometry rate (~50 Hz). |
+| `landmark_publisher_sim.py` | Simulation helper. Reads the four cylinder obstacle positions from the DQN Stage 2 world SDF, transforms them into the robot body frame using `/odom`, and publishes them as `LandmarksMsg` on `/landmarks` at 2 Hz. Measurement noise is controlled by the `std_dev_landmark_x` and `std_dev_landmark_y` node parameters (default 0.01 m², ~0.1 m std dev). |
 | `map_writer.py` | Subscribes to `/ekf/map` (a `MarkerArray`) and writes the estimated landmark positions to `map_slam.txt` in `POINT2D <id> <x> <y>` format. |
 | `evaluate_map.py` | Off-line evaluation tool. Compares `map_slam.txt` against a ground-truth file and reports relative landmark position error. |
 
@@ -45,7 +46,7 @@ The core package. It implements the full EKF SLAM pipeline — reading sensor da
 
 | File | Description |
 |------|-------------|
-| `simulation.launch.py` | Starts Gazebo with the TurtleBot3 DQN Stage 2 world and the `odom_to_control_republisher` node. Run this first when testing in simulation. |
+| `simulation.launch.py` | Starts Gazebo with the TurtleBot3 DQN Stage 2 world, `odom_to_control_republisher`, and `landmark_publisher_sim`. Run this first when testing in simulation. |
 | `ekf_pipeline.launch.py` | Starts the EKF pipeline node. Accepts an `is_real` argument (`true` for physical robot, `false` (default) for simulation). Topic remappings differ between modes. |
 
 ### `landmarks_msg`
@@ -68,29 +69,32 @@ The `third_parties/` directory contains upstream TurtleBot3 packages included fo
 
 ## Data Flow
 
+### Simulation (`is_real:=false`)
+
 ```
-Gazebo / Real Robot
-        │
-        ├─── /odom (Odometry) ──────► odom_to_control_republisher ──► /control (Twist)
-        │                                                                      │
-        └─── /scan (LaserScan) ──► landmark detector ──► /landmarks ──────────┤
-                                                                               ▼
-                                                                    EkfPipelineNode
-                                                                    ┌──────────────────┐
-                                                                    │  DataProvider     │
-                                                                    │  (noise model)    │
-                                                                    │        │          │
-                                                                    │  EKF.predict()    │
-                                                                    │  EKF.update()     │
-                                                                    └────────┬──────────┘
-                                                                             │
-                                                        ┌────────────────────┴──────────────┐
-                                                        │                                   │
-                                                  /ekf/odom                            /ekf/map
-                                                (Odometry)                          (MarkerArray)
-                                                                                          │
-                                                                                    map_writer.py
-                                                                                    map_slam.txt
+Gazebo
+  ├─ /odom (Odometry, ~50 Hz) ──► odom_to_control_republisher ──► /control (Twist, ~50 Hz) ──► EKF.predict()
+  └─ /odom (Odometry, ~50 Hz) ──► landmark_publisher_sim ──────► /landmarks (LandmarksMsg, 2 Hz) ──► EKF.update()
+           (robot pose)             (transforms SDF cylinder
+                                     positions to robot frame)
+```
+
+### Real Robot (`is_real:=true`)
+
+```
+TurtleBot3
+  ├─ /cmd_vel (Twist) ───────────────────────────────────────────► /control ──► EKF.predict()
+  └─ /scan (LaserScan) ──► landmarks_circle_detector ────────────► /landmarks ──► EKF.update()
+```
+
+### Common output (both modes)
+
+```
+EkfPipelineNode
+  ├─ /ekf/odom  (Odometry)    — estimated robot pose + covariance
+  └─ /ekf/map   (MarkerArray) — estimated landmark positions
+                                      │
+                                map_writer.py → map_slam.txt
 ```
 
 ## Student Task
@@ -114,6 +118,12 @@ ros2 launch turtlebot_landmark_slam ekf_pipeline.launch.py is_real:=false
 **Real robot:**
 ```bash
 ros2 launch turtlebot_landmark_slam ekf_pipeline.launch.py is_real:=true
+```
+
+**Move the robot (teleoperation):**
+```bash
+# Terminal 3 — use keyboard to drive, Ctrl+C to stop
+export TURTLEBOT3_MODEL=burger; ros2 run turtlebot3_teleop teleop_keyboard
 ```
 
 **Save the map:**
