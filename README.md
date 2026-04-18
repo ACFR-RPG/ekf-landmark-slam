@@ -144,7 +144,7 @@ The only file requiring implementation is `ekf.py`:
 
 ## Recorded Datasets
 
-You have access to two datasets recorded on the TurtleBot. They can be used for testing your EKF implementation logic before you deploy the code on a real robot. [https://drive.google.com/drive/u/1/folders/1YXIU8uambCT1qQPwVdBeUVEt1pzH29DE][Link to datasets | GDrive]
+You have access to two datasets recorded on the TurtleBot. They can be used for testing your EKF implementation logic before you deploy the code on a real robot. [Link to datasets on GDrive](https://drive.google.com/drive/u/1/folders/1YXIU8uambCT1qQPwVdBeUVEt1pzH29DE)
 
 The calibration parameters for the Lidar and Camera are also provided at the link above. Ensure that you use these parameters in your perception pipeline and not the ones from your own TurtleBot.
 
